@@ -2,6 +2,9 @@ FROM node:24.11-alpine
 
 WORKDIR /app
 
+# sqlite3 native module build deps (Alpine/musl)
+RUN apk add --no-cache python3 make g++
+
 # Copy package files
 COPY package*.json ./
 

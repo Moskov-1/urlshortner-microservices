@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 GO_SERVICE_URL = os.getenv("GO_SERVICE_URL", "http://localhost:8000")
 NODE_SERVICE_URL = os.getenv("NODE_SERVICE_URL", "http://localhost:3000")
 REDIS_URL = os.getenv("REDIS_URL", "localhost:6380")
-DATABASE = "python.db"
+DATABASE = os.getenv("DATABASE", "python.db")
 
 # Initialize Redis client
 redis_client = None

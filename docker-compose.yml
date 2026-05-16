@@ -16,10 +16,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - go-data:/app
+      - go-data:/data
     environment:
       - PYTHON_SERVICE_URL=http://python-service:5000
       - REDIS_URL=redis:6379
+      - DB_PATH=/data/go.db
     depends_on:
       - redis
 
@@ -29,19 +30,22 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - node-data:/app
+      - node-data:/data
+    environment:
+      - DATABASE=/data/node.db
 
   python-service:
     build: ./python-service
     container_name: python-service
     ports:
-      - "5000:5000"
+      - "5001:5000"
     volumes:
-      - python-data:/app
+      - python-data:/data
     environment:
       - GO_SERVICE_URL=http://go-service:8000
       - NODE_SERVICE_URL=http://node-service:3000
       - REDIS_URL=redis:6379
+      - DATABASE=/data/python.db
     depends_on:
       - redis
       - go-service

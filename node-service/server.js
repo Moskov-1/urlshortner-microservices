@@ -6,7 +6,7 @@ const cors = require('cors');
 
 const app = express();
 const PORT = 3000;
-const DATABASE = './node.db';
+const DATABASE = process.env.DATABASE || './node.db';
 
 // Middleware
 app.use(cors());

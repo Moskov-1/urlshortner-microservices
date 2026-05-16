@@ -41,7 +41,8 @@ type ClickEvent struct {
 
 func initDB() {
 	var err error
-	db, err = sql.Open("sqlite3", "./go.db")
+	dbPath := getEnv("DB_PATH", "./go.db")
+	db, err = sql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func initDB() {
 }
 
 func initRedis() {
-	redisURL := getEnv("REDIS_URL", "localhost:6380")
+	redisURL := getEnv("REDIS_URL", "localhost:6379")
 	
 	rdb = redis.NewClient(&redis.Options{
 		Addr:     redisURL,
