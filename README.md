@@ -137,7 +137,7 @@ docker-compose up --build -d
 
 **Access the application:**
 
-- Dashboard: `http://localhost:5000`
+- Dashboard: `http://localhost:5001` (Docker)
 - Go Service: `http://localhost:8000`
 - Node.js Service: `http://localhost:3000`
 
@@ -166,6 +166,11 @@ docker-compose up --build
 - Services communicate via Docker network using container names
 - Databases persist in Docker volumes
 - All services start together with one command!
+
+**Note on ports (Docker):**
+
+- `python-service` is published as `http://localhost:5001` because host port `5000` may already be in use.
+- Container-to-container calls still use `http://python-service:5000`.
 
 ---
 
@@ -258,8 +263,20 @@ The Node.js service will start on `http://localhost:3000`
 Open your browser and navigate to:
 
 ```
-http://localhost:5000
+http://localhost:5001  # Docker
 ```
+
+For local (non-Docker) development, Flask still runs on `http://localhost:5000`.
+
+---
+
+## CI
+
+GitHub Actions workflow (dev deploy): [.github/workflows/ci-dockerhub-update-gitops.yml](.github/workflows/ci-dockerhub-update-gitops.yml)
+
+- Builds all Docker images
+- Boots the full stack with Docker Compose
+- Runs a small end-to-end smoke test (shorten → redirect → stats)
 
 ### Create a Short URL
 

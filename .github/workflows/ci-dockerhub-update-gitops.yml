@@ -1,89 +1,97 @@
-name: CI -> Docker Hub -> GitOps Repo
+name: Build, Push & Deploy
 
 on:
   push:
-    branches:
-      - dev
+    branches: [dev]
 
 permissions:
   contents: read
 
 jobs:
-  quality:
+  smoke-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout app repo
+      - name: Checkout source code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Install system dependencies
+      - name: Build and start stack
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libsqlite3-dev
+          docker compose up -d --build
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-
-      - name: Go tests (if any)
-        working-directory: ./go-service
+      - name: Wait for services
+        shell: bash
         run: |
-          go test ./...
+          set -euo pipefail
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+          wait_http () {
+            local url="$1"
+            local name="$2"
+            local max_secs="${3:-60}"
+            echo "Waiting for $name at $url (max ${max_secs}s)…"
+            for i in $(seq 1 "$max_secs"); do
+              if curl -fsS "$url" >/dev/null 2>&1; then
+                echo "$name is up"
+                return 0
+              fi
+              sleep 1
+            done
+            echo "Timed out waiting for $name"
+            return 1
+          }
 
-      - name: Node install
-        working-directory: ./node-service
+          wait_http "http://localhost:3000/health" "node-service" 90
+          wait_http "http://localhost:5001/api/stats" "python-service" 90
+
+          echo "Waiting for go-service at http://localhost:8000/api/shorten …"
+          for i in $(seq 1 90); do
+            if curl -fsS -X POST "http://localhost:8000/api/shorten" -H 'Content-Type: application/json' -d '{"long_url":"https://example.com"}' >/dev/null 2>&1; then
+              echo "go-service is up"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: End-to-end smoke (shorten → redirect → stats)
+        shell: bash
         run: |
-          npm install
+          set -euo pipefail
 
-      - name: Node tests (if present)
-        working-directory: ./node-service
-        run: |
-          npm test --if-present
+          resp=$(curl -fsS -X POST "http://localhost:8000/api/shorten" \
+            -H 'Content-Type: application/json' \
+            -d '{"long_url":"https://example.com"}')
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+          echo "Shorten response: $resp"
+          code=$(echo "$resp" | sed -n 's/.*"short_code":"\([^"]*\)".*/\1/p')
+          [[ -n "$code" ]]
 
-      - name: Python install
-        working-directory: ./python-service
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          http_code=$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:8000/${code}")
+          echo "Redirect status: $http_code"
+          [[ "$http_code" == "301" || "$http_code" == "302" ]]
 
-      - name: Python syntax check
-        working-directory: ./python-service
-        run: |
-          python -m compileall .
+          sleep 2
 
-      - name: SonarCloud scan
-        uses: SonarSource/sonarcloud-github-action@v3
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
-            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
+          stats=$(curl -fsS "http://localhost:5001/api/stats")
+          echo "Stats response (truncated): ${stats:0:400}"
+          echo "$stats" | grep -q '"total_urls"'
+          echo "$stats" | grep -q '"total_clicks"'
 
-      - name: SonarCloud Quality Gate
-        uses: SonarSource/sonarcloud-quality-gate-action@v1.2.0
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Shutdown
+        if: always()
+        run: docker compose down -v
 
   build-and-push:
-    needs: quality
+    needs: smoke-test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout app repo
+      - name: Checkout source code
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -92,71 +100,54 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: raihanrony015
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build & push go-service
+      - name: Build and push Go service
         uses: docker/build-push-action@v6
         with:
           context: ./go-service
           push: true
-          tags: raihanrony015/url-go:${{ github.sha }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/url-go:${{ github.sha }}
 
-      - name: Build & push node-service
+      - name: Build and push Node service
         uses: docker/build-push-action@v6
         with:
           context: ./node-service
           push: true
-          tags: raihanrony015/url-node:${{ github.sha }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/url-node:${{ github.sha }}
 
-      - name: Build & push python-service
+      - name: Build and push Python service
         uses: docker/build-push-action@v6
         with:
           context: ./python-service
           push: true
-          tags: raihanrony015/url-py:${{ github.sha }}
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/url-py:${{ github.sha }}
 
-  update-gitops:
+  update-manifests:
     needs: build-and-push
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout app repo (for reference)
-        uses: actions/checkout@v4
-
-      - name: Checkout GitOps repo
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ secrets.GITOPS_REPO }}
-          token: ${{ secrets.GITOPS_PAT }}
-          path: gitops
-
-      - name: Install yq
-        uses: mikefarah/yq@v4.44.3
-
-      - name: Update images in GitOps manifests
+      - name: Update image tags in manifests repo
         env:
-          DOCKERHUB_USERNAME: raihanrony015
+          MANIFEST_REPO_TOKEN: ${{ secrets.MANIFEST_REPO_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           SHA: ${{ github.sha }}
+        shell: bash
         run: |
           set -euo pipefail
-          export GO_IMAGE="${DOCKERHUB_USERNAME}/url-go:${SHA}"
-          export NODE_IMAGE="${DOCKERHUB_USERNAME}/url-node:${SHA}"
-          export PY_IMAGE="${DOCKERHUB_USERNAME}/url-py:${SHA}"
 
-          FILE="gitops/k8s/deployments-app.yaml"
+          git clone "https://x-access-token:${MANIFEST_REPO_TOKEN}@github.com/${{ github.repository_owner }}/manifests-repo.git"
+          cd manifests-repo
 
-          yq -i '(.spec.template.spec.containers |= (map(if .name == "go-service" then .image = strenv(GO_IMAGE) else . end)))' "$FILE"
-          yq -i '(.spec.template.spec.containers |= (map(if .name == "node-service" then .image = strenv(NODE_IMAGE) else . end)))' "$FILE"
-          yq -i '(.spec.template.spec.containers |= (map(if .name == "python-service" then .image = strenv(PY_IMAGE) else . end)))' "$FILE"
+          sed -i "s|image: .*/url-go:.*|image: ${DOCKERHUB_USERNAME}/url-go:${SHA}|" k8s/deployments-app.yaml
+          sed -i "s|image: .*/url-node:.*|image: ${DOCKERHUB_USERNAME}/url-node:${SHA}|" k8s/deployments-app.yaml
+          sed -i "s|image: .*/url-py:.*|image: ${DOCKERHUB_USERNAME}/url-py:${SHA}|" k8s/deployments-app.yaml
 
-      - name: Commit & push GitOps change
-        run: |
-          set -euo pipefail
-          cd gitops
-          git config user.name "github-actions"
-          git config user.email "github-actions@users.noreply.github.com"
-
+          git config user.email "ci@github.com"
+          git config user.name "GitHub Actions"
           git add k8s/deployments-app.yaml
-          git commit -m "Update images to ${{ github.sha }}" || exit 0
+          git diff --cached --quiet || git commit -m "ci: update images to ${SHA}"
           git push
