@@ -18,6 +18,13 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
           env:
             - name: PYTHON_SERVICE_URL
               valueFrom:
@@ -62,6 +69,13 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
             - name: DATABASE
               valueFrom:
@@ -96,6 +110,13 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           env:
             - name: GO_SERVICE_URL
               valueFrom:

@@ -126,7 +126,6 @@ A working starter workflow is included in this repo:
 
 Create these secrets in GitHub → your repo → Settings → Secrets and variables → Actions:
 
-- `DOCKERHUB_USERNAME` (example: `raihanrony`)
 - `DOCKERHUB_TOKEN` (a Docker Hub access token)
 - `GITOPS_REPO` (example: `your-github-username/urlshortner-gitops`)
 - `GITOPS_PAT` (a GitHub token/PAT that can push to the GitOps repo)
@@ -140,9 +139,9 @@ Notes:
 
 The workflow tags Docker images using the commit SHA:
 
-- `DOCKERHUB_USERNAME/url-go:<sha>`
-- `DOCKERHUB_USERNAME/url-node:<sha>`
-- `DOCKERHUB_USERNAME/url-py:<sha>`
+- `raihanrony015/url-go:<sha>`
+- `raihanrony015/url-node:<sha>`
+- `raihanrony015/url-py:<sha>`
 
 Then it updates the GitOps repo file:
 
