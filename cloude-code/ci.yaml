@@ -1,0 +1,65 @@
+name: Build, Push & Deploy
+
+on:
+  push:
+    branches: [dev]   # change to your deployment branch (e.g. dev, staging)
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # ---------- Build & push each service ----------
+
+      - name: Build and push Go service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./go-service
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/url-go:${{ github.sha }}
+
+      - name: Build and push Node service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./node-service
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/url-node:${{ github.sha }}
+
+      - name: Build and push Python service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./python-service
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/url-py:${{ github.sha }}
+
+      # ---------- Update manifests repo (ArgoCD watches this) ----------
+
+      - name: Update image tags in manifests repo
+        env:
+          MANIFEST_REPO_TOKEN: ${{ secrets.MANIFEST_REPO_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          SHA: ${{ github.sha }}
+        run: |
+          git clone https://x-access-token:${MANIFEST_REPO_TOKEN}@github.com/${{ github.repository_owner }}/manifests-repo.git
+          cd manifests-repo
+
+          sed -i "s|image: .*/url-go:.*|image: ${DOCKERHUB_USERNAME}/url-go:${SHA}|" k8s/deployments-app.yaml
+          sed -i "s|image: .*/url-node:.*|image: ${DOCKERHUB_USERNAME}/url-node:${SHA}|" k8s/deployments-app.yaml
+          sed -i "s|image: .*/url-py:.*|image: ${DOCKERHUB_USERNAME}/url-py:${SHA}|" k8s/deployments-app.yaml
+
+          git config user.email "ci@github.com"
+          git config user.name "GitHub Actions"
+          git add k8s/deployments-app.yaml
+
+          # Only commit if something changed
+          git diff --cached --quiet || git commit -m "ci: update images to ${SHA}"
+          git push

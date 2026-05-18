@@ -1,16 +1,28 @@
-# Assignment Runbook (Simple): EC2 Jumpbox + AWS EKS + CI/CD + Monitoring
+# Assignment Runbook (Simple): EC2 Jumpbox + (A) AWS EKS or (B) Minikube-on-EC2
 
 This is the **simplest reproducible** way to satisfy the assignment requirements without going overboard.
 
-What you will use:
+What you will use (choose one path):
 
-- **One 16GB EC2** instance as your DevOps “jumpbox” (SSH, kubectl, Helm, k6, optional SonarQube local)
-- **AWS EKS** for the Kubernetes platform
-- **ALB Ingress** for external traffic routing (no domain required; use ALB DNS)
+- **One 16GB EC2** instance as your DevOps “jumpbox” (and optionally also your Kubernetes host)
+- **Path A (recommended if EKS is required): AWS EKS** for the Kubernetes platform + **ALB Ingress** (no domain required; use ALB DNS)
+- **Path B (if allowed): Minikube on the same EC2** and use the **EC2 public IP** as the gateway
 - **HPA** based on CPU (requires Metrics Server + CPU requests)
 - **Prometheus + Grafana** via `kube-prometheus-stack`
-- **GitHub Actions** for CI/CD: tests → SonarCloud quality gate → build/push Docker Hub → update GitOps repo
+- **GitHub Actions** for CI/CD (optional for Path B): tests → SonarCloud (or self-hosted SonarQube) → build/push **Docker Hub** → update GitOps repo
 - **ArgoCD** for automated deployment (GitOps)
+
+Notes:
+
+- This runbook does **not** require ECR. For EKS, you still need *some* registry reachable by the cluster (Docker Hub is simplest).
+- If your assignment explicitly requires **EKS**, use **Path A**. If the assignment accepts “Kubernetes on EC2”, use **Path B**.
+
+---
+
+## 0) Choose your path
+
+- **Path A (EKS + ALB)**: Follow sections 1 → 10 as written.
+- **Path B (Minikube on EC2 + public IP gateway)**: Do sections 1 + 1.4 + 1.5, then skip to sections 7–10 as needed.
 
 ## 1) EC2 setup (jumpbox)
 
@@ -26,6 +38,12 @@ Recommended:
   - Outbound: allow all
 
 You do **not** need to open Kubernetes dashboards publicly. Use SSH port forwarding instead.
+
+If you are doing **Path B (Minikube on this EC2)**, also allow inbound:
+
+- HTTP: `80` from `0.0.0.0/0` (gateway)
+- Optional: SonarQube: `9000` from your IP (or `0.0.0.0/0` if required)
+- Optional: ArgoCD UI: `8080` from your IP (or use SSH tunnel)
 
 ### 1.2 Install tools
 
@@ -55,6 +73,44 @@ sudo mv /tmp/eksctl /usr/local/bin
 # Helm
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ```
+
+### 1.4 (Path B) Install Minikube on EC2
+
+If you will run Kubernetes locally on the EC2 instance:
+
+```bash
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+
+minikube start --driver=docker --cpus=4 --memory=6144
+kubectl get nodes
+```
+
+### 1.5 (Optional) Run SonarQube locally on the EC2
+
+If you want **SonarQube on the same EC2** (instead of SonarCloud):
+
+```bash
+# required by Elasticsearch used inside SonarQube
+sudo sysctl -w vm.max_map_count=262144
+echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-sonarqube.conf
+
+docker volume create sonarqube_data
+docker volume create sonarqube_extensions
+
+docker run -d --name sonarqube \
+  -p 9000:9000 \
+  -v sonarqube_data:/opt/sonarqube/data \
+  -v sonarqube_extensions:/opt/sonarqube/extensions \
+  sonarqube:lts-community
+```
+
+Open `http://EC2_PUBLIC_IP:9000`.
+
+Practical note:
+
+- If you want GitHub Actions to use this SonarQube, you typically run a **self-hosted GitHub runner** on this EC2 (so it can reach `http://localhost:9000`).
+- Otherwise, keep SonarCloud in GitHub Actions (simplest) and treat local SonarQube as optional evidence.
 
 ### 1.3 GitHub SSH
 
@@ -223,6 +279,8 @@ kubectl -n monitoring get secret monitoring-grafana \
 
 ### 8.1 Find the ALB URL
 
+If you are doing **Path B (Minikube on EC2)**, use `http://EC2_PUBLIC_IP` as your `BASE_URL` instead.
+
 ```bash
 kubectl get ingress
 ```
@@ -273,6 +331,7 @@ kubectl top nodes
 - SonarCloud project overview + Quality Gate status
 - Grafana dashboard (Kubernetes / Nodes, Pods CPU)
 - ArgoCD Application sync status
+- If using Path B: browser open to `http://EC2_PUBLIC_IP` (gateway proof)
 
 ## 9.1 EKS sanity audit (copy/paste commands)
 
@@ -341,7 +400,7 @@ kubectl -n monitoring get svc
 - GitHub Actions run on `dev` branch (show passing steps + artifacts/logs)
 - SonarCloud project overview + Quality Gate (PASS/FAIL)
 - ArgoCD Application page showing `Synced` + `Healthy`
-- `kubectl get ingress` showing ALB `ADDRESS`
+- `kubectl get ingress` showing **ALB** `ADDRESS` (Path A) or ingress created (Path B)
 - `kubectl get hpa` before load test (replicas at min)
 - `kubectl get hpa` during spike (replicas increased)
 - Grafana dashboard showing node/pod CPU during the spike
@@ -380,4 +439,65 @@ flowchart LR
     PROM[Prometheus] --> GRAF[Grafana]
     EKS --> PROM
   end
+```
+
+---
+
+## Appendix A (Path B): Minikube gateway on EC2 public IP (no ngrok)
+
+This exposes the app using the EC2 public IP as the entrypoint.
+
+1) Build images *inside* Minikube’s Docker
+
+```bash
+eval $(minikube docker-env)
+docker build -t url-go:latest   ./go-service
+docker build -t url-node:latest ./node-service
+docker build -t url-py:latest   ./python-service
+```
+
+2) Install ingress-nginx as `LoadBalancer`
+
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --set controller.service.type=LoadBalancer
+```
+
+3) Apply manifests
+
+```bash
+kubectl apply -f k8s/
+kubectl get pods
+kubectl get ingress
+```
+
+4) Expose the Ingress on the EC2 public IP (keep it running)
+
+Option A (gateway on **port 80**, recommended if your Security Group allows 80):
+
+```bash
+sudo -E kubectl -n ingress-nginx port-forward \
+  --address 0.0.0.0 svc/ingress-nginx-controller 80:80
+```
+
+Option B (gateway on **port 8080**):
+
+```bash
+kubectl -n ingress-nginx port-forward \
+  --address 0.0.0.0 svc/ingress-nginx-controller 8080:80
+```
+
+5) Verify via EC2 public IP
+
+```bash
+EC2_PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+echo "App: http://$EC2_PUBLIC_IP"   # if using Option A
+echo "App: http://$EC2_PUBLIC_IP:8080" # if using Option B
+
+curl -i "http://$EC2_PUBLIC_IP" | head || true
+curl -i "http://$EC2_PUBLIC_IP:8080" | head || true
 ```

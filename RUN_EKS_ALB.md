@@ -7,11 +7,11 @@ This guide shows the exact steps to run the project on EKS using AWS Load Balanc
 - AWS CLI configured for your account
 - kubectl installed
 - eksctl installed
-- An ECR repo (or another registry) with your app images
+- A container registry reachable by the cluster (Docker Hub is simplest; **ECR is optional**)
 
-## Step 1: Build and push images to ECR
+## Step 1: Build and push images to a registry (Docker Hub recommended)
 
-You need images accessible from the EKS cluster. Create ECR repos and push:
+You need images accessible from the EKS cluster. Push images to **Docker Hub** (or any registry):
 
 - go-service image
 - node-service image
@@ -19,7 +19,7 @@ You need images accessible from the EKS cluster. Create ECR repos and push:
 
 Redis is used as a message bus + cache and is deployed using the public image by default.
 
-If you use public `redis:8-alpine`, you do not need an ECR repo for redis.
+If you use public `redis:8-alpine`, you do not need to build/push a custom redis image.
 
 ## Step 2: Create an EKS cluster
 
@@ -94,11 +94,11 @@ metadata:
     alb.ingress.kubernetes.io/ssl-redirect: '443'
 ```
 
-### B) Update images to ECR
+### B) Update images to your registry
 
 Edit [k8s/deployments-app.yaml](k8s/deployments-app.yaml):
 
-- Replace `image` for `go-service`, `node-service`, `python-service` with your ECR image URIs.
+- Replace `image` for `go-service`, `node-service`, `python-service` with your image URIs.
 
 Note: the shared manifests default to local image tags (for Minikube):
 
@@ -117,7 +117,7 @@ Notes about Redis (easiest setup):
 Example image URI:
 
 ```
-ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/url-go:latest
+raihanrony015/url-go:latest
 ```
 
 ### C) Validate StorageClass
@@ -158,7 +158,7 @@ If you do not have a domain, skip DNS and open the ALB DNS name directly in your
 ## Common EKS gotchas
 
 - The ALB controller requires correct IAM permissions and OIDC setup.
-- If pods cannot pull images, confirm the ECR image and node IAM permissions.
+- If pods cannot pull images, confirm the image name/tag is correct and the registry is reachable (and credentials exist if private).
 - If PVCs stay pending, confirm the StorageClass name matches your cluster.
 
 ## Service-to-service URLs (ClusterIP)

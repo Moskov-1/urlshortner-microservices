@@ -1,0 +1,245 @@
+# ============================================================
+# configmap.yaml
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  # Services communicate using Kubernetes DNS names (ClusterIP)
+  GO_SERVICE_URL: "http://go-service:8000"
+  NODE_SERVICE_URL: "http://node-service:3000"
+  PYTHON_SERVICE_URL: "http://python-service:5000"
+  REDIS_URL: "redis:6379"
+
+---
+# ============================================================
+# redis.yaml  — PV + PVC + Deployment + ClusterIP Service
+# ============================================================
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /data/redis   # Minikube node local path
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:8-alpine
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: redis-storage
+              mountPath: /data
+      volumes:
+        - name: redis-storage
+          persistentVolumeClaim:
+            claimName: redis-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+
+---
+# ============================================================
+# deployments-app.yaml  — Go, Node, Python Deployments
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-service
+  template:
+    metadata:
+      labels:
+        app: go-service
+    spec:
+      containers:
+        - name: go-service
+          image: url-go:latest
+          # Use "Never" when building locally inside Minikube's Docker daemon.
+          # Switch to "Always" when pulling from Docker Hub in CI/CD.
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: app-config
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-service
+  template:
+    metadata:
+      labels:
+        app: node-service
+    spec:
+      containers:
+        - name: node-service
+          image: url-node:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: app-config
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: python-service
+  template:
+    metadata:
+      labels:
+        app: python-service
+    spec:
+      containers:
+        - name: python-service
+          image: url-py:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: app-config
+
+---
+# ============================================================
+# services.yaml  — ClusterIP Services for all app pods
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-service
+spec:
+  type: ClusterIP
+  selector:
+    app: go-service
+  ports:
+    - port: 8000
+      targetPort: 8000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-service
+spec:
+  type: ClusterIP
+  selector:
+    app: node-service
+  ports:
+    - port: 3000
+      targetPort: 3000
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-service
+spec:
+  type: ClusterIP
+  selector:
+    app: python-service
+  ports:
+    - port: 5000
+      targetPort: 5000
+
+---
+# ============================================================
+# ingress.yaml  — Single Ingress for all traffic
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          # Python dashboard is the root / entry point
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: python-service
+                port:
+                  number: 5000
+          # Go service handles short-code redirects via Python proxy,
+          # but expose directly too if needed
+          - path: /api/go
+            pathType: Prefix
+            backend:
+              service:
+                name: go-service
+                port:
+                  number: 8000
+          # Node service
+          - path: /api/node
+            pathType: Prefix
+            backend:
+              service:
+                name: node-service
+                port:
+                  number: 3000
