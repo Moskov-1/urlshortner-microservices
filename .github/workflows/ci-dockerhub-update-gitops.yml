@@ -45,13 +45,16 @@ jobs:
           wait_http "http://localhost:5001/api/stats" "python-service" 90
 
           echo "Waiting for go-service at http://localhost:8000/api/shorten …"
+          ok=0
           for i in $(seq 1 90); do
             if curl -fsS -X POST "http://localhost:8000/api/shorten" -H 'Content-Type: application/json' -d '{"long_url":"https://example.com"}' >/dev/null 2>&1; then
               echo "go-service is up"
+              ok=1
               break
             fi
             sleep 1
           done
+          [[ "$ok" == "1" ]]
 
       - name: End-to-end smoke (shorten → redirect → stats)
         shell: bash
@@ -63,7 +66,7 @@ jobs:
             -d '{"long_url":"https://example.com"}')
 
           echo "Shorten response: $resp"
-          code=$(echo "$resp" | sed -n 's/.*"short_code":"\([^"]*\)".*/\1/p')
+          code=$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("short_code", ""))' <<<"$resp")
           [[ -n "$code" ]]
 
           http_code=$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:8000/${code}")
