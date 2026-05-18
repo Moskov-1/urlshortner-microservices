@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: urlshortner-config
+data:
+  GO_SERVICE_URL: "http://go-service:8000"
+  NODE_SERVICE_URL: "http://node-service:3000"
+  PYTHON_SERVICE_URL: "http://python-service:5000"
+  GO_DB_PATH: "/data/go.db"
+  NODE_DB_PATH: "/data/node.db"
+  PYTHON_DB_PATH: "/data/python.db"

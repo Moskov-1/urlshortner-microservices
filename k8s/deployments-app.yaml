@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-service
+  template:
+    metadata:
+      labels:
+        app: go-service
+    spec:
+      containers:
+        - name: go-service
+          image: ostad/capstan/url-go:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: PYTHON_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: urlshortner-config
+                  key: PYTHON_SERVICE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: urlshortner-secrets
+                  key: REDIS_URL
+            - name: DB_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: urlshortner-config
+                  key: GO_DB_PATH
+          volumeMounts:
+            - name: go-data
+              mountPath: /data
+      volumes:
+        - name: go-data
+          persistentVolumeClaim:
+            claimName: go-data-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: node-service
+  template:
+    metadata:
+      labels:
+        app: node-service
+    spec:
+      containers:
+        - name: node-service
+          image: stad/capstan/url-node:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: urlshortner-config
+                  key: NODE_DB_PATH
+          volumeMounts:
+            - name: node-data
+              mountPath: /data
+      volumes:
+        - name: node-data
+          persistentVolumeClaim:
+            claimName: node-data-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: python-service
+  template:
+    metadata:
+      labels:
+        app: python-service
+    spec:
+      containers:
+        - name: python-service
+          image: stad/capstan/url-py:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name: GO_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: urlshortner-config
+                  key: GO_SERVICE_URL
+            - name: NODE_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: urlshortner-config
+                  key: NODE_SERVICE_URL
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: urlshortner-secrets
+                  key: REDIS_URL
+            - name: DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: urlshortner-config
+                  key: PYTHON_DB_PATH
+          volumeMounts:
+            - name: python-data
+              mountPath: /data
+      volumes:
+        - name: python-data
+          persistentVolumeClaim:
+            claimName: python-data-pvc
