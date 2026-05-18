@@ -4,9 +4,8 @@ A production-ready microservice-based URL shortener demonstrating proper service
 
 ## Runbooks
 
+- EC2 or local Minikube + ArgoCD (GitOps): [RUN_EC2_MINIKUBE_ARGOCD.md](RUN_EC2_MINIKUBE_ARGOCD.md)
 - EKS (ALB Ingress): [RUN_EKS_ALB.md](RUN_EKS_ALB.md)
-- Minikube + ngrok: [RUN_MINIKUBE_NGROK.md](RUN_MINIKUBE_NGROK.md)
-- GitOps (ArgoCD + GitHub Actions): [GITOPS_ARGOCD.md](GITOPS_ARGOCD.md)
 - Full assignment runbook (EC2 jumpbox + EKS + CI/CD + Monitoring): [ASSIGNMENT_EKS_EC2.md](ASSIGNMENT_EKS_EC2.md)
 
 ## Architecture
