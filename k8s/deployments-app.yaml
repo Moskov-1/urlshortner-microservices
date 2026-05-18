@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
         - name: go-service
-          image: ostad/capstan/url-go:latest
+          image: url-go:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
           env:
@@ -57,7 +58,8 @@ spec:
     spec:
       containers:
         - name: node-service
-          image: stad/capstan/url-node:latest
+          image: url-node:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           env:
@@ -90,7 +92,8 @@ spec:
     spec:
       containers:
         - name: python-service
-          image: stad/capstan/url-py:latest
+          image: url-py:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
           env:

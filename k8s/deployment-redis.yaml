@@ -17,13 +17,9 @@ spec:
           image: redis:8-alpine
           ports:
             - containerPort: 6379
-          args:
-            - "--appendonly"
-            - "yes"
           volumeMounts:
             - name: redis-data
               mountPath: /data
       volumes:
         - name: redis-data
-          persistentVolumeClaim:
-            claimName: redis-data-pvc
+          emptyDir: {}

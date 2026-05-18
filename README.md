@@ -2,6 +2,12 @@
 
 A production-ready microservice-based URL shortener demonstrating proper service separation with four independent services: Go for high-performance redirects, Python for analytics and dashboard, Node.js for URL metadata enrichment, and Redis for event-driven communication and caching.
 
+## Runbooks
+
+- EKS (ALB Ingress): [RUN_EKS_ALB.md](RUN_EKS_ALB.md)
+- Minikube + ngrok: [RUN_MINIKUBE_NGROK.md](RUN_MINIKUBE_NGROK.md)
+- GitOps (ArgoCD + GitHub Actions): [GITOPS_ARGOCD.md](GITOPS_ARGOCD.md)
+
 ## Architecture
 
 This project demonstrates a realistic microservice architecture where different services handle their specific responsibilities:

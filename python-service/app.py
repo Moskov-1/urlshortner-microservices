@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect
 import sqlite3
 import requests
 from datetime import datetime, timedelta
@@ -7,9 +7,13 @@ import os
 import redis
 import json
 import threading
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
+
+# If running behind Ingress/ngrok, respect X-Forwarded-* headers for correct URL generation.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # Use environment variables for Docker, fallback to localhost for local dev
 GO_SERVICE_URL = os.getenv("GO_SERVICE_URL", "http://localhost:8000")
@@ -163,6 +167,15 @@ def create_short_url():
 
         if response.status_code == 200:
             data = response.json()
+
+            # Build a public short URL that matches the external entrypoint (Ingress / ngrok).
+            # If PUBLIC_BASE_URL is set, it takes precedence.
+            public_base_url = os.getenv("PUBLIC_BASE_URL")
+            if public_base_url:
+                public_base_url = public_base_url.rstrip("/")
+            else:
+                public_base_url = request.url_root.rstrip("/")
+            data["short_url"] = f"{public_base_url}/{data['short_code']}"
 
             # Call Node.js service to fetch metadata asynchronously
             metadata = {"status": "unavailable"}
@@ -320,6 +333,32 @@ def get_stats():
             "all_urls": all_urls,
         }
     )
+
+
+@app.route("/<short_code>")
+def redirect_short_code(short_code: str):
+    """Public redirect endpoint.
+
+    This makes short URLs work when only the Python service is exposed via Ingress.
+    """
+    try:
+        resp = requests.get(
+            f"{GO_SERVICE_URL}/{short_code}",
+            timeout=5,
+            allow_redirects=False,
+        )
+
+        location = resp.headers.get("Location")
+        if resp.status_code in (301, 302, 307, 308) and location:
+            return redirect(location, code=resp.status_code)
+
+        if resp.status_code == 404:
+            return jsonify({"error": "Short URL not found"}), 404
+
+        return jsonify({"error": "Redirect service error"}), 502
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error calling Go redirect endpoint: {e}")
+        return jsonify({"error": "Redirect service unavailable"}), 503
 
 
 if __name__ == "__main__":

@@ -7,16 +7,17 @@ This guide shows the exact steps to run the project on EKS using AWS Load Balanc
 - AWS CLI configured for your account
 - kubectl installed
 - eksctl installed
-- An ECR repo (or another registry) with your images
+- An ECR repo (or another registry) with your app images
 
 ## Step 1: Build and push images to ECR
 
-You need images accessible from the EKS cluster. Create four ECR repos and push:
+You need images accessible from the EKS cluster. Create ECR repos and push:
 
 - go-service image
 - node-service image
 - python-service image
-- redis image (optional if you use public redis)
+
+Redis is used as a message bus + cache and is deployed using the public image by default.
 
 If you use public `redis:8-alpine`, you do not need an ECR repo for redis.
 
@@ -52,14 +53,21 @@ https://docs.aws.amazon.com/eks/latest/userguide/aws-load-balancer-controller.ht
 
 ## Step 4: Update Kubernetes manifests for EKS + ALB
 
-You need to update the Ingress to use the ALB controller and set your domain/TLS.
+You need to update the Ingress to use the ALB controller.
+
+If you do not have a domain, you can still use EKS+ALB by opening the ALB DNS name directly (no `host` required).
 
 ### A) Update Ingress for ALB
 
 Edit [k8s/ingress.yaml](k8s/ingress.yaml):
 
-- Replace the `host` value with your DNS name (example: `short.example.com`).
 - Add the ALB annotations.
+- Optional: add a `host` (only if you own a domain).
+
+Important:
+
+- The shared manifest defaults to `spec.ingressClassName: nginx` (for Minikube).
+- For EKS+ALB, change it to `alb` (or remove it and rely on the ALB annotations).
 
 Example annotations to add under `metadata`:
 
@@ -92,7 +100,19 @@ Edit [k8s/deployments-app.yaml](k8s/deployments-app.yaml):
 
 - Replace `image` for `go-service`, `node-service`, `python-service` with your ECR image URIs.
 
+Note: the shared manifests default to local image tags (for Minikube):
+
+- `url-go:latest`
+- `url-node:latest`
+- `url-py:latest`
+
 Edit [k8s/deployment-redis.yaml](k8s/deployment-redis.yaml) only if you do not want public redis.
+
+Notes about Redis (easiest setup):
+
+- The default manifest uses `redis:8-alpine`.
+- Redis data is ephemeral (no PVC) to keep setup simple.
+- If you want Redis persistence, add a PVC and mount it at `/data`.
 
 Example image URI:
 
@@ -102,7 +122,9 @@ ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/url-go:latest
 
 ### C) Validate StorageClass
 
-Your PVCs reference `gp3` in [k8s/pvc.yaml](k8s/pvc.yaml). This works for EKS (EBS gp3). If your cluster uses a different default StorageClass, update `storageClassName` in that file.
+PVCs in [k8s/pvc.yaml](k8s/pvc.yaml) intentionally do not hardcode a `storageClassName`, so they use your cluster default.
+
+If you specifically want EBS `gp3`, create a `gp3` StorageClass in your cluster and then set `storageClassName: gp3` on each PVC.
 
 ## Step 5: Apply manifests
 
@@ -122,7 +144,7 @@ You will see a DNS name in the `ADDRESS` column. Point your DNS (Route 53 or oth
 
 ## Step 7: Verify
 
-- Open `http://short.example.com` (or your host) to see the Python dashboard.
+- Open the ALB URL (or your host) to see the Python dashboard.
 - Create a short URL and test redirect.
 
 ## Where exactly to change things
@@ -136,3 +158,15 @@ You will see a DNS name in the `ADDRESS` column. Point your DNS (Route 53 or oth
 - The ALB controller requires correct IAM permissions and OIDC setup.
 - If pods cannot pull images, confirm the ECR image and node IAM permissions.
 - If PVCs stay pending, confirm the StorageClass name matches your cluster.
+
+## Service-to-service URLs (ClusterIP)
+
+Internal communication uses Kubernetes Service DNS names (ClusterIP). This is already configured in [k8s/configmap.yaml](k8s/configmap.yaml) like:
+
+- `http://go-service:8000`
+- `http://node-service:3000`
+- `http://python-service:5000`
+
+## GitOps (ArgoCD) + CI
+
+If you want ArgoCD + a GitHub Actions pipeline (build → push images → update a separate manifests repo), follow [GITOPS_ARGOCD.md](GITOPS_ARGOCD.md).

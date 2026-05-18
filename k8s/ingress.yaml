@@ -3,9 +3,9 @@ kind: Ingress
 metadata:
   name: urlshortner-ingress
 spec:
+  ingressClassName: nginx
   rules:
-    - host: localhost
-      http:
+    - http:
         paths:
           - path: /
             pathType: Prefix
