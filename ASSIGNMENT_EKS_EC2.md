@@ -274,6 +274,79 @@ kubectl top nodes
 - Grafana dashboard (Kubernetes / Nodes, Pods CPU)
 - ArgoCD Application sync status
 
+## 9.1 EKS sanity audit (copy/paste commands)
+
+Run these from the EC2 jumpbox and use them as your “proof” outputs.
+
+Cluster + nodes:
+
+```bash
+kubectl config current-context
+kubectl get nodes -o wide
+kubectl get ns
+```
+
+Workloads (your app namespace may be `default` or `urlshortner` depending on ArgoCD destination):
+
+```bash
+kubectl get deploy,po,svc,ingress,hpa -A
+```
+
+Show that Services are internal (ClusterIP) and only Ingress is external:
+
+```bash
+kubectl get svc -A
+kubectl get ingress -A
+```
+
+Health + rollouts:
+
+```bash
+kubectl rollout status deploy/go-service
+kubectl rollout status deploy/python-service
+kubectl rollout status deploy/node-service
+kubectl describe ingress urlshortner-ingress || true
+```
+
+HPA + metrics (requires Metrics Server):
+
+```bash
+kubectl get hpa
+kubectl top nodes
+kubectl top pods -A
+```
+
+During load test (live view):
+
+```bash
+kubectl get hpa -w
+```
+
+ArgoCD (proof of GitOps):
+
+```bash
+kubectl -n argocd get applications
+kubectl -n argocd get pods
+```
+
+Monitoring stack:
+
+```bash
+kubectl -n monitoring get pods
+kubectl -n monitoring get svc
+```
+
+## 9.2 Screenshot list (exact)
+
+- GitHub Actions run on `dev` branch (show passing steps + artifacts/logs)
+- SonarCloud project overview + Quality Gate (PASS/FAIL)
+- ArgoCD Application page showing `Synced` + `Healthy`
+- `kubectl get ingress` showing ALB `ADDRESS`
+- `kubectl get hpa` before load test (replicas at min)
+- `kubectl get hpa` during spike (replicas increased)
+- Grafana dashboard showing node/pod CPU during the spike
+- `kubectl top pods -A` during spike
+
 ## 10) Architecture diagram (Mermaid)
 
 Paste this into your README or export it as an image (VS Code Mermaid extension / Mermaid Live Editor):
