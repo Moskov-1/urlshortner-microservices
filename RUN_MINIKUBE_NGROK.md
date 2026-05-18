@@ -77,6 +77,14 @@ The Kubernetes manifests default to local image tags:
 Build them:
 
 ```bash
+cd go-service
+
+# (Optional) Generate/update go.sum without installing Go locally
+# Windows Git Bash note: MSYS_NO_PATHCONV avoids path-mangling for -v mounts
+MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}:/app" -w /app golang:1.24-alpine go mod tidy
+
+cd ..
+
 docker build -t url-go:latest ./go-service
 docker build -t url-node:latest ./node-service
 docker build -t url-py:latest ./python-service

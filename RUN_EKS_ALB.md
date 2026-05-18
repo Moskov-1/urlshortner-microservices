@@ -142,6 +142,8 @@ kubectl get ingress
 
 You will see a DNS name in the `ADDRESS` column. Point your DNS (Route 53 or other) to that DNS name using a CNAME/ALIAS.
 
+If you do not have a domain, skip DNS and open the ALB DNS name directly in your browser.
+
 ## Step 7: Verify
 
 - Open the ALB URL (or your host) to see the Python dashboard.

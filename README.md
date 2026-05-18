@@ -181,11 +181,23 @@ cd /home/xaadu/codes/urlshortner
 ```bash
 cd go-service
 
+# If go.sum is missing or dependencies changed, generate/update it
+go mod tidy
+
 # Download dependencies
 go mod download
 
 # Run the service
 go run main.go
+```
+
+If you do not have Go installed locally, you can generate `go.sum` using Docker:
+
+```bash
+cd go-service
+
+# Windows Git Bash note: MSYS_NO_PATHCONV avoids path-mangling for -v mounts
+MSYS_NO_PATHCONV=1 docker run --rm -v "${PWD}:/app" -w /app golang:1.24-alpine go mod tidy
 ```
 
 The Go service will start on `http://localhost:8000`
